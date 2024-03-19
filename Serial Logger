@@ -1,0 +1,243 @@
+/* 
+ * File:   Lab3.c
+ * Author: Gurvansh Singh
+ *
+ * Created on November 10, 2021, 4:25 PM
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <avr/io.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdint.h>
+#include <avr/interrupt.h>
+
+volatile uint8_t T = 0; // Initializing our Time global display variables 
+volatile uint8_t S = 0;
+volatile uint8_t M = 0;
+volatile uint8_t H = 0;
+volatile uint16_t D = 0;
+
+ISR(TIMER1_COMPA_vect, ISR_BLOCK) {
+
+    T++;
+    if (T > 9) {
+        T = 0;
+        S++;
+    }
+    if (S > 59) {
+        S = 0;
+        M++;
+    }
+    if (M > 59) {
+        M = 0;
+        H++;
+    }
+    if (H > 23) {
+        H = 0;
+        D++;
+    }
+    if (D > 999) {
+        D = 0;
+        T = 0;
+        S = 0;
+        M = 0;
+        H = 0;
+    }
+}; // Interrupt Routine
+
+void UART() { // UART initialization
+
+    UCSRB = 0x18; // UART Control Registers using 8N1 protocol 
+    UCSRC = 0x06;
+    UBRRL = 0x17; // Baud Rate = 38400 baud setting done in the register 
+    UBRRH = 0x00;
+}
+
+int uart_putchar(char data) { // Function for transmitting a character to a buffer
+    /* Wait for empty transmit buffer */
+    while (!(UCSRA & (1 << UDRE)));
+    /* Put data into buffer, sends the data */
+    UDR = data;
+    return (0);
+}
+
+uint8_t sw1() // Function for Switch/Button 1 in Pressed State
+{
+    int x;
+
+    x = !(PIND & (1 << PIND6));
+    return (x);
+}
+
+uint8_t sw2() // Function for Switch/Button 2 in Pressed State
+{
+    uint8_t x;
+
+    x = !(PIND & (1 << PIND4));
+    return (x); // returns an identity/number for 
+};
+
+uint8_t sw3() // Function for Switch/Button 3 in Pressed State
+{
+    uint8_t x;
+
+    x = !(PIND & (1 << PIND5));
+    return (x);
+};
+
+uint8_t sw4() // Function for Switch/Button 4 in Pressed State
+{
+    uint8_t x;
+
+    x = !(PIND & (1 << PIND3));
+    return (x);
+}
+
+void Wavegen_T1(void) { // Function for Generation of our required waveform used for Timing purposes
+
+    TCCR1A = 0x40; // Wave generation in CTC mode and toggle after comparison for Timer 1
+    OCR1A = 23039;
+    TIMSK = 0x40; // Enabling Timer Interrupts with interrupt at output compare match value OCIE1A enabled
+    TIFR = 0x40; // Interrupt Flags Enabled
+    TCCR1B = 0x0B;
+}
+
+void Sending_Time_data(void) {
+
+    char Day[] = {'0','0','0'}; // Initializing our Arrays for our clocks  
+    char Hours[] = {'0','0'};
+    char Minutes[] = {'0','0'};
+    char Seconds[] = {'0','0'};
+    char Deci_Second[] = {'0'};
+
+
+    itoa(D, Day, 10);
+    for (uint8_t i = 0; i < sizeof Day; i++) {
+
+        uart_putchar(Day[i]);
+    }
+    uart_putchar(':');
+
+    itoa(H, Hours, 10);
+    for (uint8_t i = 0; i < sizeof Hours; i++) {
+
+        uart_putchar(Hours[i]);
+    }
+    uart_putchar(':');
+
+    itoa(M, Minutes, 10);
+    for (uint8_t i = 0; i < sizeof Minutes; i++) {
+
+        uart_putchar(Minutes[i]);
+    }
+    uart_putchar(':');
+
+    itoa(S, Seconds, 10);
+    for (uint8_t i = 0; i < sizeof Seconds; i++) {
+
+        uart_putchar(Seconds[i]);
+    }
+    uart_putchar(':');
+
+
+    itoa(T, Deci_Second, 10);
+    for (uint8_t i = 0; i < sizeof Deci_Second; i++) {
+        uart_putchar(Deci_Second[i]);
+    }
+    uart_putchar(' ');
+
+}
+
+int main(void) {
+
+    DDRD &= ~(1 << DDD6); // Making PD6 an input for our Push Button
+    DDRD &= ~(1 << DDD5); // Making PD5 an input for our Push Button
+    DDRD &= ~(1 << DDD4); // Making PD4 an input for our Push Button
+    DDRD &= ~(1 << DDD3); // Making PD3 an input for our Push Button
+
+    PORTD |= (1 << PORTD6); // Turning on the Pull-up Network for Switches
+    PORTD |= (1 << PORTD5);
+    PORTD |= (1 << PORTD4);
+    PORTD |= (1 << PORTD3);
+
+    UART();
+    char a[] = "Channel 1\n\r";
+    char b[] = "Channel 2\n\r";
+    char c[] = "Channel 3\n\r";
+    char d[] = "Channel 4\n\r";
+    
+    
+    Wavegen_T1();
+    sei(); // Enabling Global Interrupt and Timer Interrupts
+  
+    uart_putchar('g');   // Displaying Name and CCID
+    uart_putchar('u');   // If I try to use a loop it kind of misbehaves, so that's why I used this basic way for requirement
+    uart_putchar('r');
+    uart_putchar('v');
+    uart_putchar('a');
+    uart_putchar('n');
+    uart_putchar('s');
+    uart_putchar('h');
+    uart_putchar(' ');
+    uart_putchar('1');
+    uart_putchar('6');
+    uart_putchar('1');
+    uart_putchar('9');
+    uart_putchar('3');
+    uart_putchar('9');
+    uart_putchar('9');
+    uart_putchar('\n');
+    uart_putchar('\r');
+    
+    while (1) {
+
+        while ((sw1() || sw2() || sw3() || sw4()) == 0) { // Holds the iteration until any further switch is pressed
+        };
+        while (sw1()) {
+
+            while (sw1()) {
+            }
+            Sending_Time_data();          // Displaying clock data
+
+            for (uint8_t i = 0; i < sizeof (a); i++) {   // Displaying the channel number depending upon switch button pressed
+                uart_putchar(a[i]);
+            }
+        }
+        while (sw2()) {
+            
+            while (sw2()) {
+            }
+            Sending_Time_data();       // Displaying clock data
+
+            for (uint8_t i = 0; i < sizeof (b); i++) {    // Displaying the channel number depending upon switch button pressed
+                uart_putchar(b[i]);
+            }
+        }
+        while (sw3()) {
+            
+            while (sw3()) {
+            }
+            Sending_Time_data();      // Displaying clock data
+
+            for (uint8_t i = 0; i < sizeof (c); i++) {    // Displaying the channel number depending upon switch button pressed
+                uart_putchar(c[i]);
+            }
+        }
+        while (sw4()) {
+            
+            while (sw4()) {
+            }
+            Sending_Time_data();       // Displaying clock data
+
+            for (uint8_t i = 0; i < sizeof (d); i++) {    // Displaying the channel number depending upon switch button pressed
+                uart_putchar(d[i]);
+            }
+        }
+
+    }
+
+    return (0);
+}
+
